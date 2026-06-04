@@ -95,3 +95,9 @@ This is a demo deployment, not the full production architecture.
 
 For production/research deployment, use the multi-service Railway or Render
 guides instead.
+
+## Troubleshooting
+
+If Render shows an npm install error, redeploy from the latest commit. The
+single-service Dockerfile uses `npm install --legacy-peer-deps` for the React
+build to avoid strict peer-dependency failures in cloud Docker builds.
