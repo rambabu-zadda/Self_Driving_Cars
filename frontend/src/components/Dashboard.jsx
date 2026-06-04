@@ -30,6 +30,9 @@ export default function Dashboard() {
   });
 
   const [runningState, setRunningState] = useState("stopped"); // running, paused, stopped
+  const [controlMode, setControlMode] = useState("local");
+  const [controlBusy, setControlBusy] = useState(null);
+  const [controlMessage, setControlMessage] = useState("Ready");
   const [connected, setConnected] = useState(false);
   const [connectionMode, setConnectionMode] = useState("Offline");
   const [fps, setFps] = useState(0);
@@ -95,6 +98,9 @@ export default function Dashboard() {
       fetchExperiments();
     }, 6000);
 
+    const pollStatus = setInterval(fetchTrainStatus, 2000);
+
+    fetchTrainStatus();
     fetchEpisodes();
     fetchExperiments();
 
@@ -102,9 +108,22 @@ export default function Dashboard() {
       clearInterval(connCheck);
       clearInterval(pollTelemetry);
       clearInterval(pollLists);
+      clearInterval(pollStatus);
       if (wsRef.current) wsRef.current.disconnect();
     };
   }, []); // deliberate empty dependency
+
+  function applyTrainStatus(status) {
+    if (!status) return;
+    const nextState = status.paused
+      ? "paused"
+      : status.running
+        ? "running"
+        : "stopped";
+    setRunningState(nextState);
+    setControlMode(status.control_mode || "local");
+    setCurrentExperimentId(status.experiment_id || "-");
+  }
 
   function pushRewardPoint(episode, step, value) {
     if (typeof value !== "number" || step == null) return;
@@ -217,6 +236,7 @@ export default function Dashboard() {
       case "status":
         if (parsed.experiment_id) setCurrentExperimentId(parsed.experiment_id);
         setRunningState(parsed.status || runningState);
+        setControlMessage(`Trainer ${parsed.status || "updated"}`);
         setLogs((old) => [
           { ts: Date.now(), msg: `Status: ${parsed.status}` },
           ...old.slice(0, 300),
@@ -265,18 +285,86 @@ export default function Dashboard() {
     }
   }
 
+  async function fetchTrainStatus() {
+    try {
+      const res = await fetch(`${wsClient.BACKEND}/train/status?t=${Date.now()}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return null;
+      const status = await res.json();
+      applyTrainStatus(status);
+      return status;
+    } catch (e) {
+      console.warn("Failed fetch train status", e);
+      return null;
+    }
+  }
+
   // ------------------------------
   // START / PAUSE / RESET
   // ------------------------------
   async function doAction(action) {
+    setControlBusy(action);
+    setControlMessage(`${actionLabel(action)} request sent...`);
+    setLogs((old) => [
+      { ts: Date.now(), msg: `${actionLabel(action)} clicked` },
+      ...old.slice(0, 300),
+    ]);
+
     try {
-      await fetch(`${wsClient.BACKEND}/train/${action}`, { method: "POST" });
+      const res = await fetch(`${wsClient.BACKEND}/train/${action}`, {
+        method: "POST",
+        cache: "no-store",
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload.detail || `HTTP ${res.status}`);
+      }
+
+      const changed = Boolean(
+        payload.started ?? payload.paused ?? payload.resumed ?? payload.reset
+      );
+      const message = changed
+        ? `${actionLabel(action)} accepted`
+        : actionNoopMessage(action, runningState);
+      setControlMessage(message);
+      setLogs((old) => [
+        { ts: Date.now(), msg: `${message} (${payload.control_mode || "local"})` },
+        ...old.slice(0, 300),
+      ]);
+
+      await fetchTrainStatus();
+      if (action === "reset") {
+        setFrame(null);
+        setRewardPoints([]);
+      }
     } catch (e) {
+      setControlMessage(`Control failed: ${e.message}`);
       setLogs((old) => [
         { ts: Date.now(), msg: `Control failed: ${e.message}` },
         ...old.slice(0, 300),
       ]);
+    } finally {
+      setControlBusy(null);
     }
+  }
+
+  function actionLabel(action) {
+    return action.charAt(0).toUpperCase() + action.slice(1);
+  }
+
+  function actionNoopMessage(action, state) {
+    if (action === "start" && state === "running") return "Trainer is already running";
+    if (action === "pause" && state !== "running") return "Trainer is not running";
+    if (action === "resume" && state !== "paused") return "Trainer is not paused";
+    if (action === "reset" && state === "stopped") return "Trainer is already stopped";
+    return `${actionLabel(action)} did not change trainer state`;
+  }
+
+  function trackMessage() {
+    if (runningState === "running") return "Trainer is running. Waiting for first frame...";
+    if (runningState === "paused") return "Training paused.";
+    return "Click Start to begin training.";
   }
 
   // ------------------------------
@@ -296,20 +384,22 @@ export default function Dashboard() {
           <div className="space-x-2">
             <button
               onClick={() => doAction("start")}
+              disabled={Boolean(controlBusy)}
               className={`px-4 py-2 rounded-lg font-semibold shadow-lg transition ${
                 runningState === "running"
                   ? "bg-gradient-to-r from-green-400 to-teal-300 text-black ring-4 ring-green-400/30"
                   : "bg-gradient-to-r from-teal-600 to-cyan-500"
               }`}
             >
-              Start Training
+              {controlBusy === "start" ? "Starting..." : "Start Training"}
             </button>
 
             <button
               onClick={() => doAction("reset")}
-              className="px-3 py-2 border border-teal-700 rounded-md hover:bg-teal-900"
+              disabled={Boolean(controlBusy)}
+              className="px-3 py-2 border border-teal-700 rounded-md hover:bg-teal-900 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Reset
+              {controlBusy === "reset" ? "Resetting..." : "Reset"}
             </button>
           </div>
         </div>
@@ -324,7 +414,7 @@ export default function Dashboard() {
           </h2>
 
           <div className="rounded-lg border border-teal-800/20 p-3 bg-black">
-            <TrackView src={frame} />
+            <TrackView src={frame} message={trackMessage()} />
           </div>
 
           {/* METRICS ROW */}
@@ -354,30 +444,55 @@ export default function Dashboard() {
           <h3 className="text-lg text-teal-300 mb-2">Training Controls</h3>
 
           <div className="grid gap-3">
+            <div className="rounded-lg bg-black/30 p-3 ring-1 ring-white/10">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-gray-400">Trainer Status</span>
+                <strong
+                  className={`capitalize ${
+                    runningState === "running"
+                      ? "text-green-300"
+                      : runningState === "paused"
+                        ? "text-yellow-200"
+                        : "text-gray-300"
+                  }`}
+                >
+                  {runningState}
+                </strong>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3 text-xs text-gray-500">
+                <span>Mode: {controlMode}</span>
+                <span>{controlMessage}</span>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => doAction("start")}
-                className="px-3 py-2 rounded bg-gradient-to-r from-green-400 to-teal-300 text-black"
+                disabled={Boolean(controlBusy)}
+                className="px-3 py-2 rounded bg-gradient-to-r from-green-400 to-teal-300 text-black disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Start
+                {controlBusy === "start" ? "Starting..." : "Start"}
               </button>
               <button
                 onClick={() => doAction("pause")}
-                className="px-3 py-2 rounded bg-gray-800"
+                disabled={Boolean(controlBusy)}
+                className="px-3 py-2 rounded bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Pause
+                {controlBusy === "pause" ? "Pausing..." : "Pause"}
               </button>
               <button
                 onClick={() => doAction("resume")}
-                className="px-3 py-2 rounded bg-gray-800"
+                disabled={Boolean(controlBusy)}
+                className="px-3 py-2 rounded bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Resume
+                {controlBusy === "resume" ? "Resuming..." : "Resume"}
               </button>
               <button
                 onClick={() => doAction("reset")}
-                className="px-3 py-2 rounded bg-red-600"
+                disabled={Boolean(controlBusy)}
+                className="px-3 py-2 rounded bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Reset
+                {controlBusy === "reset" ? "Resetting..." : "Reset"}
               </button>
             </div>
 
