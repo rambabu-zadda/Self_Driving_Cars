@@ -6,6 +6,7 @@ const WS_URL =
 
 function connect(onMessage) {
   let socket = null;
+  let heartbeatTimer = null;
   let reconnectTimer = null;
   let shouldReconnect = true;
 
@@ -14,6 +15,12 @@ function connect(onMessage) {
 
     socket.onopen = () => {
       console.log("%c[WS] Connected", "color:#00ffcc");
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = setInterval(() => {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send("ping");
+        }
+      }, 20000);
     };
 
     socket.onmessage = (event) => {
@@ -27,6 +34,7 @@ function connect(onMessage) {
     };
 
     socket.onclose = () => {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
       if (!shouldReconnect) return;
       console.log("%c[WS] Disconnected - Reconnecting...", "color:orange");
       reconnectTimer = setTimeout(openSocket, 1000);
@@ -41,6 +49,7 @@ function connect(onMessage) {
     },
     disconnect() {
       shouldReconnect = false;
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (socket) socket.close();
     },

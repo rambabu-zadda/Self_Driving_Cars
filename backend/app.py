@@ -1,5 +1,6 @@
 # backend/app.py
 import base64
+import asyncio
 import json
 import os
 from datetime import datetime, timezone
@@ -371,7 +372,11 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # keep-alive / read to detect disconnects
-            await websocket.receive_text()
-    except WebSocketDisconnect:
+            try:
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=30)
+                if message == "ping":
+                    await websocket.send_text(json.dumps({"type": "pong"}))
+            except asyncio.TimeoutError:
+                await websocket.send_text(json.dumps({"type": "pong"}))
+    except Exception:
         manager.disconnect(websocket)
