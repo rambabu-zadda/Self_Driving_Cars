@@ -69,6 +69,9 @@ For cloud deployment, Railway and Render are the simplest options. The project
 is a multi-service system, so deploy the API, worker, frontend, PostgreSQL, and
 Redis/Key Value as separate services.
 
+For a simple one-service demo deployment, use
+[Render Single-Service Deployment](docs/deployment-render-single-service.md).
+
 See [Railway Deployment Guide](docs/deployment-railway.md).
 See [Render Deployment Guide](docs/deployment-render.md).
 

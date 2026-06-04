@@ -5,7 +5,8 @@ import os
 from datetime import datetime, timezone
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from typing import List, Optional
 from db import init_db, SessionLocal
 from event_bus import RedisCommandPublisher
@@ -55,10 +56,21 @@ TRAINER_CONTROL_MODE = os.getenv("TRAINER_CONTROL_MODE", "local").lower()
 trainer_commands = RedisCommandPublisher() if TRAINER_CONTROL_MODE == "redis" else None
 FRAME_STORE_STEP_INTERVAL = int(os.getenv("FRAME_STORE_STEP_INTERVAL", "50"))
 MAX_STORED_FRAMES = int(os.getenv("MAX_STORED_FRAMES", "1000"))
+FRONTEND_BUILD_DIR = os.getenv(
+    "FRONTEND_BUILD_DIR",
+    os.path.join(os.path.dirname(__file__), "static"),
+)
+FRONTEND_ASSETS_DIR = os.path.join(FRONTEND_BUILD_DIR, "static")
+
+if os.path.exists(FRONTEND_ASSETS_DIR):
+    app.mount("/static", StaticFiles(directory=FRONTEND_ASSETS_DIR), name="frontend-static")
 
 @app.get("/")
 def read_root():
-    return {"message": "Backend is running — visit /docs for API docs."}
+    index_path = os.path.join(FRONTEND_BUILD_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"message": "Backend is running - visit /docs for API docs."}
 
 @app.get("/health")
 def health():

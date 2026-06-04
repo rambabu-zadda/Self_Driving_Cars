@@ -1,4 +1,6 @@
-const BACKEND = process.env.REACT_APP_BACKEND || "http://127.0.0.1:8000";
+const BACKEND =
+  process.env.REACT_APP_BACKEND ||
+  (typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8000");
 const WS_URL =
   process.env.REACT_APP_WS_URL || `${BACKEND.replace(/^http/, "ws")}/ws`;
 

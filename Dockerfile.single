@@ -1,0 +1,30 @@
+FROM node:20-alpine AS frontend-build
+
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements-docker.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements-docker.txt
+
+COPY backend/ .
+COPY --from=frontend-build /frontend/build ./static
+
+ENV TRAINER_CONTROL_MODE=local
+ENV AUTO_CREATE_TABLES=true
+ENV EXPERIMENT_TRACKER=none
+ENV FRONTEND_BUILD_DIR=/app/static
+
+EXPOSE 8000
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
