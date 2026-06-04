@@ -58,7 +58,9 @@ function connect(onMessage) {
 
 async function fetchLatestFrame() {
   try {
-    const res = await fetch(`${BACKEND}/frames/latest`);
+    const res = await fetch(`${BACKEND}/frames/latest?t=${Date.now()}`, {
+      cache: "no-store",
+    });
     if (!res.ok) return null;
     const json = await res.json();
     if (!json.png_b64) return null;

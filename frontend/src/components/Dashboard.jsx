@@ -38,6 +38,7 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
 
   const wsRef = useRef(null);
+  const lastDataAtRef = useRef(0);
 
   // ------------------------------
   // INITIALIZATION + WS CONNECTION
@@ -46,6 +47,7 @@ export default function Dashboard() {
     wsRef.current = wsClient.connect((msg) => {
       try {
         const parsed = JSON.parse(msg.text);
+        lastDataAtRef.current = Date.now();
         handleMessage(parsed);
       } catch {
         console.log("WS raw:", msg.text);
@@ -53,12 +55,17 @@ export default function Dashboard() {
     });
 
     const connCheck = setInterval(() => {
-      setConnected(wsRef.current && wsRef.current.readyState === 1);
+      const wsConnected = wsRef.current && wsRef.current.readyState === 1;
+      const pollingRecentlyWorked = Date.now() - lastDataAtRef.current < 5000;
+      setConnected(Boolean(wsConnected || pollingRecentlyWorked));
     }, 400);
 
     const pollFrame = setInterval(async () => {
       const f = await wsClient.fetchLatestFrame();
-      if (f) setFrame(f);
+      if (f) {
+        lastDataAtRef.current = Date.now();
+        setFrame(f);
+      }
     }, 1500);
 
     fetchEpisodes();
@@ -162,7 +169,9 @@ export default function Dashboard() {
   // ------------------------------
   async function fetchEpisodes() {
     try {
-      const res = await fetch(`${wsClient.BACKEND}/episodes?limit=5`);
+      const res = await fetch(`${wsClient.BACKEND}/episodes?limit=5&t=${Date.now()}`, {
+        cache: "no-store",
+      });
       if (!res.ok) return;
       const arr = await res.json();
       setEpisodes(arr);
@@ -173,7 +182,9 @@ export default function Dashboard() {
 
   async function fetchExperiments() {
     try {
-      const res = await fetch(`${wsClient.BACKEND}/experiments?limit=5`);
+      const res = await fetch(`${wsClient.BACKEND}/experiments?limit=5&t=${Date.now()}`, {
+        cache: "no-store",
+      });
       if (!res.ok) return;
       const arr = await res.json();
       setExperiments(arr);
