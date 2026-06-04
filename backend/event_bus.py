@@ -9,7 +9,11 @@ from typing import Dict, Iterator, Optional
 import requests
 
 
-BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
+BACKEND_INTERNAL_HOSTPORT = os.getenv("BACKEND_INTERNAL_HOSTPORT")
+BACKEND_URL = os.getenv(
+    "BACKEND_URL",
+    f"http://{BACKEND_INTERNAL_HOSTPORT}" if BACKEND_INTERNAL_HOSTPORT else "http://127.0.0.1:8000",
+)
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 TRAINER_COMMAND_CHANNEL = os.getenv("TRAINER_COMMAND_CHANNEL", "trainer.commands")
 
