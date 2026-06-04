@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "autonomous-driving-rl-fullstack"
+version = "0.1.0"
+description = "Full stack prototype - RL self driving"
+authors = ["You <you@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+fastapi = "^0.95"
+uvicorn = {extras=["standard"], version="^0.22"}
+sqlalchemy = "^1.4"
+pillow = "^9.0"
+numpy = "^1.25"
+pygame = "^2.1"
+torch = "^2.3"
+pytest = "^8.2"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

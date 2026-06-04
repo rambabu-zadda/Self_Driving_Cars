@@ -1,0 +1,126 @@
+version: "3.8"
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_DB=self_driving_rl
+      - POSTGRES_USER=rl_user
+      - POSTGRES_PASSWORD=rl_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rl_user -d self_driving_rl"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - BACKEND_URL=http://localhost:8000
+      - TRAINER_CONTROL_MODE=redis
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://rl_user:rl_password@postgres:5432/self_driving_rl
+      - AUTO_CREATE_TABLES=false
+      - CHECKPOINT_DIR=/app/checkpoints
+      - FRAME_STORE_STEP_INTERVAL=50
+      - MAX_STORED_FRAMES=1000
+    volumes:
+      - ./backend:/app
+      - checkpoints:/app/checkpoints
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  trainer:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["python", "trainer_worker.py"]
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://rl_user:rl_password@postgres:5432/self_driving_rl
+      - EXPERIMENT_TRACKER=mlflow
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MLFLOW_EXPERIMENT_NAME=Self-Driving Cars RL
+      - CHECKPOINT_DIR=/app/checkpoints
+      - CHECKPOINT_INTERVAL=25
+    volumes:
+      - ./backend:/app
+      - checkpoints:/app/checkpoints
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+
+  mlflow:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.mlflow
+    command:
+      [
+        "mlflow",
+        "server",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "5000",
+        "--backend-store-uri",
+        "postgresql://rl_user:rl_password@postgres:5432/self_driving_rl",
+        "--default-artifact-root",
+        "/mlflow/artifacts",
+      ]
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_BACKEND=http://localhost:8000
+      - REACT_APP_WS_URL=ws://localhost:8000/ws
+    volumes:
+      - ./frontend:/app
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  checkpoints:
+  postgres_data:
+  mlflow_artifacts:

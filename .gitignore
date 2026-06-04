@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+build/
+data.db
+checkpoints/
+mlruns/
+.pytest_cache/
+coverage.xml
+.coverage
