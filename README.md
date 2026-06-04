@@ -63,6 +63,14 @@ docker compose up --build
 - PostgreSQL: `localhost:5432`
 - MLflow: <http://localhost:5000>
 
+## Cloud Deployment
+
+For cloud deployment, use Railway first. The project is a multi-service system,
+so deploy each Compose service as a separate Railway service and use managed
+PostgreSQL/Redis.
+
+See [Railway Deployment Guide](docs/deployment-railway.md).
+
 ## Local Backend
 
 ```bash
