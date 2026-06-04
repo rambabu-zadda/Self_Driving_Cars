@@ -206,6 +206,16 @@ def get_experiment_metrics(experiment_id: str, limit: int = 500):
     ]
 
 
+@app.get("/metrics/latest")
+def get_latest_metric():
+    db = SessionLocal()
+    row = db.query(Metric).order_by(Metric.created_at.desc(), Metric.id.desc()).first()
+    db.close()
+    if not row:
+        return JSONResponse({}, status_code=204)
+    return _metric_to_dict(row)
+
+
 @app.get("/checkpoints")
 def get_checkpoints(experiment_id: Optional[str] = None, limit: int = 50):
     db = SessionLocal()
@@ -365,6 +375,22 @@ def _int_or_none(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _metric_to_dict(row: Metric):
+    return {
+        "experiment_id": row.experiment_id,
+        "episode": row.episode,
+        "step": row.step,
+        "reward": row.reward,
+        "loss": row.loss,
+        "epsilon": row.epsilon,
+        "q_value": row.q_value,
+        "replay_size": row.replay_size,
+        "speed": row.speed,
+        "progress": row.progress,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
 
 # WebSocket endpoint
 @app.websocket("/ws")

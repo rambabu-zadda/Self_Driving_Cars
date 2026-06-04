@@ -16,21 +16,22 @@ export default function Dashboard() {
   const [frame, setFrame] = useState(null);
   const [episodes, setEpisodes] = useState([]);
   const [experiments, setExperiments] = useState([]);
-  const [currentExperimentId, setCurrentExperimentId] = useState("—");
+  const [currentExperimentId, setCurrentExperimentId] = useState("-");
   const [metrics, setMetrics] = useState({
-    episode: "—",
-    reward: "—",
-    crashes: "—",
-    steps: "—",
-    epsilon: "—",
-    loss: "—",
-    replaySize: "—",
-    action: "—",
+    episode: "-",
+    reward: "-",
+    crashes: "-",
+    steps: "-",
+    epsilon: "-",
+    loss: "-",
+    replaySize: "-",
+    action: "-",
     rewardBreakdown: {},
   });
 
   const [runningState, setRunningState] = useState("stopped"); // running, paused, stopped
   const [connected, setConnected] = useState(false);
+  const [connectionMode, setConnectionMode] = useState("Offline");
   const [fps, setFps] = useState(0);
   const [speed, setSpeed] = useState(0);
   const [rewardPoints, setRewardPoints] = useState([]);
@@ -39,6 +40,8 @@ export default function Dashboard() {
 
   const wsRef = useRef(null);
   const lastDataAtRef = useRef(0);
+  const lastFrameAtRef = useRef(0);
+  const lastMetricPointRef = useRef("");
 
   // ------------------------------
   // INITIALIZATION + WS CONNECTION
@@ -58,25 +61,92 @@ export default function Dashboard() {
       const wsConnected = wsRef.current && wsRef.current.readyState === 1;
       const pollingRecentlyWorked = Date.now() - lastDataAtRef.current < 5000;
       setConnected(Boolean(wsConnected || pollingRecentlyWorked));
+      if (wsConnected) {
+        setConnectionMode("WebSocket");
+      } else if (pollingRecentlyWorked) {
+        setConnectionMode("Polling");
+      } else {
+        setConnectionMode("Offline");
+      }
     }, 400);
 
-    const pollFrame = setInterval(async () => {
+    const pollTelemetry = setInterval(async () => {
       const f = await wsClient.fetchLatestFrame();
       if (f) {
+        const now = Date.now();
+        if (lastFrameAtRef.current) {
+          const refreshFps = 1000 / Math.max(now - lastFrameAtRef.current, 1);
+          setFps(Math.max(1, Math.round(refreshFps)));
+        }
+        lastFrameAtRef.current = now;
         lastDataAtRef.current = Date.now();
         setFrame(f);
       }
+
+      const latestMetric = await wsClient.fetchLatestMetric();
+      if (latestMetric) {
+        lastDataAtRef.current = Date.now();
+        applyMetricSnapshot(latestMetric);
+      }
     }, 1500);
+
+    const pollLists = setInterval(() => {
+      fetchEpisodes();
+      fetchExperiments();
+    }, 6000);
 
     fetchEpisodes();
     fetchExperiments();
 
     return () => {
       clearInterval(connCheck);
-      clearInterval(pollFrame);
+      clearInterval(pollTelemetry);
+      clearInterval(pollLists);
       if (wsRef.current) wsRef.current.disconnect();
     };
   }, []); // deliberate empty dependency
+
+  function pushRewardPoint(episode, step, value) {
+    if (typeof value !== "number" || step == null) return;
+    const key = `${episode ?? "unknown"}-${step}`;
+    if (lastMetricPointRef.current === key) return;
+    lastMetricPointRef.current = key;
+    setRewardPoints((prev) => [...prev, { step, value }].slice(-200));
+  }
+
+  function applyMetricSnapshot(snapshot) {
+    if (!snapshot) return;
+
+    if (snapshot.experiment_id) {
+      setCurrentExperimentId(snapshot.experiment_id);
+    }
+
+    setMetrics((prev) => ({
+      ...prev,
+      episode: snapshot.episode ?? prev.episode ?? "-",
+      reward:
+        typeof snapshot.reward === "number"
+          ? snapshot.reward
+          : prev.reward ?? "-",
+      steps: snapshot.step ?? snapshot.steps ?? prev.steps ?? "-",
+      epsilon:
+        typeof snapshot.epsilon === "number"
+          ? snapshot.epsilon
+          : prev.epsilon ?? "-",
+      loss:
+        typeof snapshot.loss === "number"
+          ? snapshot.loss
+          : prev.loss ?? "-",
+      replaySize:
+        snapshot.replay_size ?? snapshot.replaySize ?? prev.replaySize ?? "-",
+      rewardBreakdown: snapshot.reward_breakdown ?? prev.rewardBreakdown ?? {},
+    }));
+
+    if (typeof snapshot.speed === "number") {
+      setSpeed(Number(snapshot.speed || 0).toFixed(2));
+    }
+    pushRewardPoint(snapshot.episode, snapshot.step ?? snapshot.steps, snapshot.reward);
+  }
 
   // ------------------------------
   // HANDLE WS MESSAGES
@@ -92,32 +162,34 @@ export default function Dashboard() {
         }
         if (parsed.metrics) {
           setMetrics({
-            episode: parsed.metrics.episode ?? "—",
+            episode: parsed.metrics.episode ?? "-",
             reward:
               typeof parsed.metrics.reward === "number"
                 ? parsed.metrics.reward
-                : "—",
-            crashes: parsed.metrics.crashes ?? "—",
-            steps: parsed.metrics.steps ?? "—",
-            epsilon: parsed.metrics.epsilon ?? "—",
-            loss: parsed.metrics.loss ?? "—",
-            replaySize: parsed.metrics.replay_size ?? "—",
-            action: parsed.metrics.action ?? "—",
+                : "-",
+            crashes: parsed.metrics.crashes ?? "-",
+            steps: parsed.metrics.steps ?? parsed.metrics.step ?? "-",
+            epsilon: parsed.metrics.epsilon ?? "-",
+            loss: parsed.metrics.loss ?? "-",
+            replaySize: parsed.metrics.replay_size ?? "-",
+            action: parsed.metrics.action ?? "-",
             rewardBreakdown: parsed.metrics.reward_breakdown ?? {},
           });
 
           if (parsed.metrics.fps) setFps(Math.round(parsed.metrics.fps));
           if (parsed.metrics.speed)
             setSpeed(Number(parsed.metrics.speed || 0).toFixed(2));
+          pushRewardPoint(
+            parsed.metrics.episode,
+            parsed.metrics.steps ?? parsed.metrics.step,
+            parsed.metrics.reward
+          );
         }
         break;
       }
 
       case "metric_point":
-        setRewardPoints((prev) => {
-          const next = [...prev, { step: parsed.step, value: parsed.point }];
-          return next.slice(-200);
-        });
+        pushRewardPoint(parsed.episode, parsed.step, parsed.point);
         break;
 
       case "episode":
@@ -126,7 +198,7 @@ export default function Dashboard() {
         break;
 
       case "experiment_start":
-        setCurrentExperimentId(parsed.experiment_id || "—");
+        setCurrentExperimentId(parsed.experiment_id || "-");
         fetchExperiments();
         break;
 
@@ -219,7 +291,7 @@ export default function Dashboard() {
         </h1>
 
         <div className="flex items-center gap-4">
-          <WSIndicator connected={connected} />
+          <WSIndicator connected={connected} mode={connectionMode} />
           <FPSCounter fps={fps} />
           <div className="space-x-2">
             <button
@@ -230,7 +302,7 @@ export default function Dashboard() {
                   : "bg-gradient-to-r from-teal-600 to-cyan-500"
               }`}
             >
-              ▶ Start Training
+              Start Training
             </button>
 
             <button
@@ -390,7 +462,7 @@ export default function Dashboard() {
                         <strong>
                           {typeof experiment.average_reward === "number"
                             ? experiment.average_reward.toFixed(2)
-                            : "—"}
+                            : "-"}
                         </strong>
                       </span>
                       <span>
@@ -398,7 +470,7 @@ export default function Dashboard() {
                         <strong>
                           {typeof experiment.collision_rate === "number"
                             ? `${(experiment.collision_rate * 100).toFixed(1)}%`
-                            : "—"}
+                            : "-"}
                         </strong>
                       </span>
                       <span>
@@ -406,7 +478,7 @@ export default function Dashboard() {
                         <strong>
                           {typeof experiment.success_rate === "number"
                             ? `${(experiment.success_rate * 100).toFixed(1)}%`
-                            : "—"}
+                            : "-"}
                         </strong>
                       </span>
                     </div>

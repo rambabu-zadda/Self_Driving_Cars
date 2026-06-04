@@ -70,8 +70,21 @@ async function fetchLatestFrame() {
   }
 }
 
+async function fetchLatestMetric() {
+  try {
+    const res = await fetch(`${BACKEND}/metrics/latest?t=${Date.now()}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export default {
   connect,
   fetchLatestFrame,
+  fetchLatestMetric,
   BACKEND,
 };
