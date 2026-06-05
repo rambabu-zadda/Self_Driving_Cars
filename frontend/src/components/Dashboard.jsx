@@ -10,6 +10,7 @@ import RewardChart from "./RewardChart";
 import LogsPanel from "./LogsPanel";
 import ErrorPopup from "./ErrorPopup";
 import EpisodeSummary from "./EpisodeSummary";
+import MetricCard from "./MetricCard";
 
 
 export default function Dashboard() {
@@ -24,7 +25,9 @@ export default function Dashboard() {
     steps: "-",
     epsilon: "-",
     loss: "-",
+    qValue: "-",
     replaySize: "-",
+    progress: "-",
     action: "-",
     rewardBreakdown: {},
   });
@@ -125,6 +128,25 @@ export default function Dashboard() {
     setCurrentExperimentId(status.experiment_id || "-");
   }
 
+  function formatNumber(value, digits = 2) {
+    return typeof value === "number" && Number.isFinite(value)
+      ? value.toFixed(digits)
+      : value;
+  }
+
+  function progressPercent() {
+    if (typeof metrics.progress === "number") {
+      return Math.max(0, Math.min(100, metrics.progress * 100));
+    }
+    return 0;
+  }
+
+  function stateTone() {
+    if (runningState === "running") return "green";
+    if (runningState === "paused") return "yellow";
+    return "gray";
+  }
+
   function pushRewardPoint(episode, step, value) {
     if (typeof value !== "number" || step == null) return;
     const key = `${episode ?? "unknown"}-${step}`;
@@ -156,8 +178,16 @@ export default function Dashboard() {
         typeof snapshot.loss === "number"
           ? snapshot.loss
           : prev.loss ?? "-",
+      qValue:
+        typeof snapshot.q_value === "number"
+          ? snapshot.q_value
+          : prev.qValue ?? "-",
       replaySize:
         snapshot.replay_size ?? snapshot.replaySize ?? prev.replaySize ?? "-",
+      progress:
+        typeof snapshot.progress === "number"
+          ? snapshot.progress
+          : prev.progress ?? "-",
       rewardBreakdown: snapshot.reward_breakdown ?? prev.rewardBreakdown ?? {},
     }));
 
@@ -190,7 +220,9 @@ export default function Dashboard() {
             steps: parsed.metrics.steps ?? parsed.metrics.step ?? "-",
             epsilon: parsed.metrics.epsilon ?? "-",
             loss: parsed.metrics.loss ?? "-",
+            qValue: parsed.metrics.q_value ?? "-",
             replaySize: parsed.metrics.replay_size ?? "-",
+            progress: parsed.metrics.progress ?? "-",
             action: parsed.metrics.action ?? "-",
             rewardBreakdown: parsed.metrics.reward_breakdown ?? {},
           });
@@ -367,29 +399,48 @@ export default function Dashboard() {
     return "Click Start to begin training.";
   }
 
+  function buttonClass(kind, active = false) {
+    const base =
+      "rounded-xl px-4 py-3 font-semibold transition disabled:cursor-not-allowed disabled:opacity-50";
+    if (kind === "start") {
+      return `${base} ${
+        active
+          ? "bg-gradient-to-r from-green-300 to-teal-300 text-black shadow-lg shadow-green-500/20"
+          : "bg-gradient-to-r from-teal-500 to-cyan-500 text-black hover:scale-[1.02]"
+      }`;
+    }
+    if (kind === "pause") return `${base} bg-slate-800 text-gray-100 hover:bg-slate-700`;
+    if (kind === "resume") return `${base} bg-blue-600/80 text-white hover:bg-blue-500`;
+    return `${base} bg-red-600 text-white hover:bg-red-500`;
+  }
+
   // ------------------------------
   // RENDER UI
   // ------------------------------
   return (
-    <div className="min-h-screen p-6 bg-gradient-to-b from-gray-900 to-black text-white">
+    <div className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(45,212,191,0.18),_transparent_35%),linear-gradient(180deg,#0f172a,#020617_55%,#000)] p-4 text-white md:p-6">
       {/* HEADER */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-teal-300">
-          Autonomous Driving RL Simulation
-        </h1>
+      <div className="mb-6 rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-black/30 backdrop-blur">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <div className="mb-2 inline-flex rounded-full border border-teal-300/20 bg-teal-300/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-teal-200">
+              Reinforcement Learning Lab
+            </div>
+            <h1 className="text-3xl font-black tracking-tight text-white md:text-5xl">
+              Autonomous Driving RL Simulation
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm text-gray-400 md:text-base">
+              Train, monitor, and evaluate a DQN driving agent with live frames, reward telemetry, and deployment-safe polling.
+            </p>
+          </div>
 
-        <div className="flex items-center gap-4">
-          <WSIndicator connected={connected} mode={connectionMode} />
-          <FPSCounter fps={fps} />
-          <div className="space-x-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <WSIndicator connected={connected} mode={connectionMode} />
+            <FPSCounter fps={fps} />
             <button
               onClick={() => doAction("start")}
               disabled={Boolean(controlBusy)}
-              className={`px-4 py-2 rounded-lg font-semibold shadow-lg transition ${
-                runningState === "running"
-                  ? "bg-gradient-to-r from-green-400 to-teal-300 text-black ring-4 ring-green-400/30"
-                  : "bg-gradient-to-r from-teal-600 to-cyan-500"
-              }`}
+              className={buttonClass("start", runningState === "running")}
             >
               {controlBusy === "start" ? "Starting..." : "Start Training"}
             </button>
@@ -397,28 +448,55 @@ export default function Dashboard() {
             <button
               onClick={() => doAction("reset")}
               disabled={Boolean(controlBusy)}
-              className="px-3 py-2 border border-teal-700 rounded-md hover:bg-teal-900 disabled:cursor-not-allowed disabled:opacity-50"
+              className={buttonClass("reset")}
             >
               {controlBusy === "reset" ? "Resetting..." : "Reset"}
             </button>
           </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <MetricCard title="Trainer" value={runningState} subtitle={controlMessage} tone={stateTone()} small />
+          <MetricCard title="Episode" value={metrics.episode} subtitle="Current run" tone="teal" small />
+          <MetricCard title="Reward" value={formatNumber(metrics.reward, 2)} subtitle="Total return" tone="green" small />
+          <MetricCard title="Steps" value={metrics.steps} subtitle="Episode step" tone="blue" small />
+          <MetricCard title="Epsilon" value={formatNumber(metrics.epsilon, 3)} subtitle="Exploration" tone="yellow" small />
         </div>
       </div>
 
       {/* BODY GRID */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* LEFT SIDE */}
-        <div className="xl:col-span-2 bg-gradient-to-b from-zinc-900 to-gray-900 rounded-xl p-4 ring-1 ring-teal-900/20">
-          <h2 className="text-xl text-teal-300 mb-3">
-            Virtual Track Environment
-          </h2>
+        <div className="xl:col-span-2 rounded-3xl border border-white/10 bg-gradient-to-b from-zinc-900/90 to-gray-950/90 p-4 shadow-2xl shadow-black/30">
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-teal-200">
+                Virtual Track Environment
+              </h2>
+              <p className="text-sm text-gray-500">
+                Live visual feed from the deployed trainer. First frame may take a short warmup.
+              </p>
+            </div>
+            <div className="min-w-[220px]">
+              <div className="flex justify-between text-xs text-gray-400">
+                <span>Route Progress</span>
+                <strong className="text-teal-200">{progressPercent().toFixed(1)}%</strong>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-teal-400 to-cyan-300 transition-all duration-500"
+                  style={{ width: `${progressPercent()}%` }}
+                />
+              </div>
+            </div>
+          </div>
 
-          <div className="rounded-lg border border-teal-800/20 p-3 bg-black">
+          <div className="rounded-2xl border border-teal-400/10 bg-black/70 p-3 shadow-inner shadow-teal-500/5">
             <TrackView src={frame} message={trackMessage()} />
           </div>
 
           {/* METRICS ROW */}
-          <div className="mt-4 flex flex-col lg:flex-row items-stretch lg:items-center gap-4">
+          <div className="mt-4 flex flex-col items-stretch gap-4 lg:flex-row lg:items-center">
             <Speedometer speed={speed} />
 
             <div className="flex-1">
@@ -440,11 +518,11 @@ export default function Dashboard() {
         </div>
 
         {/* RIGHT SIDE */}
-        <div className="bg-zinc-900 rounded-xl p-4 ring-1 ring-teal-900/20">
-          <h3 className="text-lg text-teal-300 mb-2">Training Controls</h3>
+        <div className="rounded-3xl border border-white/10 bg-zinc-950/90 p-4 shadow-2xl shadow-black/30">
+          <h3 className="mb-2 text-xl font-bold text-teal-200">Training Controls</h3>
 
           <div className="grid gap-3">
-            <div className="rounded-lg bg-black/30 p-3 ring-1 ring-white/10">
+            <div className="rounded-2xl bg-black/30 p-4 ring-1 ring-white/10">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm text-gray-400">Trainer Status</span>
                 <strong
@@ -469,28 +547,28 @@ export default function Dashboard() {
               <button
                 onClick={() => doAction("start")}
                 disabled={Boolean(controlBusy)}
-                className="px-3 py-2 rounded bg-gradient-to-r from-green-400 to-teal-300 text-black disabled:cursor-not-allowed disabled:opacity-50"
+                className={buttonClass("start", runningState === "running")}
               >
                 {controlBusy === "start" ? "Starting..." : "Start"}
               </button>
               <button
                 onClick={() => doAction("pause")}
                 disabled={Boolean(controlBusy)}
-                className="px-3 py-2 rounded bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className={buttonClass("pause")}
               >
                 {controlBusy === "pause" ? "Pausing..." : "Pause"}
               </button>
               <button
                 onClick={() => doAction("resume")}
                 disabled={Boolean(controlBusy)}
-                className="px-3 py-2 rounded bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className={buttonClass("resume")}
               >
                 {controlBusy === "resume" ? "Resuming..." : "Resume"}
               </button>
               <button
                 onClick={() => doAction("reset")}
                 disabled={Boolean(controlBusy)}
-                className="px-3 py-2 rounded bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                className={buttonClass("reset")}
               >
                 {controlBusy === "reset" ? "Resetting..." : "Reset"}
               </button>
@@ -499,37 +577,38 @@ export default function Dashboard() {
             {/* METRICS */}
             <div className="mt-2">
               <h4 className="text-sm text-teal-200">Latest Metrics</h4>
-              <div className="grid grid-cols-1 gap-2 mt-2">
-                <div className="p-2 bg-gray-900 rounded break-all">
+              <div className="mt-2 grid grid-cols-1 gap-2">
+                <div className="break-all rounded-xl bg-gray-900/80 p-3">
                   Experiment: <strong>{currentExperimentId}</strong>
                 </div>
-                <div className="p-2 bg-gray-900 rounded">
+                <div className="rounded-xl bg-gray-900/80 p-3">
                   Episode: <strong>{metrics.episode}</strong>
                 </div>
-                <div className="p-2 bg-gray-900 rounded">
+                <div className="rounded-xl bg-gray-900/80 p-3">
                   Reward:{" "}
                   <strong>
-                    {typeof metrics.reward === "number"
-                      ? metrics.reward.toFixed(2)
-                      : metrics.reward}
+                    {formatNumber(metrics.reward, 2)}
                   </strong>
                 </div>
-                <div className="p-2 bg-gray-900 rounded">
+                <div className="rounded-xl bg-gray-900/80 p-3">
                   Crashes: <strong>{metrics.crashes}</strong>
                 </div>
-                <div className="p-2 bg-gray-900 rounded">
+                <div className="rounded-xl bg-gray-900/80 p-3">
                   Steps: <strong>{metrics.steps}</strong>
                 </div>
-                <div className="p-2 bg-gray-900 rounded">
-                  Epsilon: <strong>{typeof metrics.epsilon === "number" ? metrics.epsilon.toFixed(3) : metrics.epsilon}</strong>
+                <div className="rounded-xl bg-gray-900/80 p-3">
+                  Epsilon: <strong>{formatNumber(metrics.epsilon, 3)}</strong>
                 </div>
-                <div className="p-2 bg-gray-900 rounded">
-                  Loss: <strong>{typeof metrics.loss === "number" ? metrics.loss.toFixed(4) : metrics.loss}</strong>
+                <div className="rounded-xl bg-gray-900/80 p-3">
+                  Loss: <strong>{formatNumber(metrics.loss, 4)}</strong>
                 </div>
-                <div className="p-2 bg-gray-900 rounded">
+                <div className="rounded-xl bg-gray-900/80 p-3">
+                  Q Value: <strong>{formatNumber(metrics.qValue, 4)}</strong>
+                </div>
+                <div className="rounded-xl bg-gray-900/80 p-3">
                   Replay Buffer: <strong>{metrics.replaySize}</strong>
                 </div>
-                <div className="p-2 bg-gray-900 rounded">
+                <div className="rounded-xl bg-gray-900/80 p-3">
                   Last Action: <strong>{metrics.action}</strong>
                 </div>
               </div>
