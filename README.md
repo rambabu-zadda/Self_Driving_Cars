@@ -7,6 +7,19 @@ The platform includes a vector-state highway environment, a PyTorch DQN agent,
 live FastAPI/WebSocket telemetry, checkpointing, deterministic evaluation, and
 a React research dashboard.
 
+## Portfolio Highlights
+
+- End-to-end AI product: simulation environment, RL agent, API, database,
+  dashboard, Docker, and cloud deployment.
+- Deployment-friendly telemetry: WebSocket streaming locally with HTTP polling
+  fallback for cloud platforms such as Render.
+- Research-style experiment tracking: reward, loss, Q-value, epsilon, replay
+  size, speed, progress, crash rate, success rate, and checkpoints.
+- Interview-ready dashboard: live track feed, trainer controls, KPI cards,
+  reward moving average, route progress, and experiment insights.
+- Engineering proof: backend tests, frontend production build, Dockerized
+  services, GitHub Actions CI, Alembic migrations, and evaluation scripts.
+
 ## Current Capabilities
 
 - DQN with experience replay, target network, Double DQN, and Dueling DQN
@@ -139,6 +152,15 @@ python evaluate.py checkpoints/dqn_episode_25.pt --episodes 20 --seed 1000
 The command reports average reward, collision rate, success rate, and average
 episode length. Use only measured values from this output in reports or resumes.
 
+Recommended evaluation protocol for resume/report claims:
+
+1. Train until at least one checkpoint is saved.
+2. Evaluate the checkpoint on 20 or more fixed-seed episodes.
+3. Compare it with the random baseline using `benchmark.py`.
+4. Report only measured values, for example average reward, success rate,
+   collision rate, and average episode length.
+5. Include the seed, episode count, and checkpoint name beside any result.
+
 ## Benchmarking
 
 Compare the random baseline with one or more trained DQN checkpoints:
@@ -181,6 +203,36 @@ pytest tests
 cd ../frontend
 npm run build
 ```
+
+GitHub Actions runs both checks on push and pull request:
+
+- Backend: install dependencies and run `pytest tests`
+- Frontend: install packages with `npm ci` and run `npm run build`
+
+## Demo Checklist
+
+Use this checklist before sharing the project with recruiters or faculty:
+
+1. Redeploy the latest GitHub commit.
+2. Open the live demo and hard refresh the browser.
+3. Click Start and wait for the first training frames.
+4. Show trainer status, route progress, reward trend, speed, epsilon, loss, and
+   experiment insights.
+5. Open `/docs` to show FastAPI endpoints.
+6. Show `benchmark.py` or `evaluate.py` output for measured ML performance.
+7. Keep a short screen recording or GIF in the README when possible.
+
+## Resume Metrics To Collect
+
+Replace the placeholders below only after running evaluation:
+
+- Evaluated DQN policy over `N` fixed-seed episodes.
+- Achieved `X` average reward compared with `Y` random-baseline reward.
+- Reduced collision rate from `A%` to `B%`.
+- Reached `C%` destination success rate.
+- Served live telemetry through FastAPI with dashboard updates every `T` seconds.
+- Containerized and deployed the full-stack application as a single cloud
+  service for demo access.
 
 ## Research Roadmap
 

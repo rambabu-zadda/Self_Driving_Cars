@@ -147,6 +147,30 @@ export default function Dashboard() {
     return "gray";
   }
 
+  function experimentInsights() {
+    const totalEpisodes = experiments.reduce(
+      (sum, experiment) => sum + (experiment.episode_count || 0),
+      0
+    );
+    const bestReward = experiments
+      .filter((experiment) => typeof experiment.average_reward === "number")
+      .sort((a, b) => b.average_reward - a.average_reward)[0];
+    const bestSuccess = experiments
+      .filter((experiment) => typeof experiment.success_rate === "number")
+      .sort((a, b) => b.success_rate - a.success_rate)[0];
+    const safest = experiments
+      .filter((experiment) => typeof experiment.collision_rate === "number")
+      .sort((a, b) => a.collision_rate - b.collision_rate)[0];
+
+    return {
+      totalExperiments: experiments.length,
+      totalEpisodes,
+      bestReward,
+      bestSuccess,
+      safest,
+    };
+  }
+
   function pushRewardPoint(episode, step, value) {
     if (typeof value !== "number" || step == null) return;
     const key = `${episode ?? "unknown"}-${step}`;
@@ -414,6 +438,8 @@ export default function Dashboard() {
     return `${base} bg-red-600 text-white hover:bg-red-500`;
   }
 
+  const insights = experimentInsights();
+
   // ------------------------------
   // RENDER UI
   // ------------------------------
@@ -612,6 +638,51 @@ export default function Dashboard() {
                   Last Action: <strong>{metrics.action}</strong>
                 </div>
               </div>
+            </div>
+
+            <div className="mt-2 rounded-2xl border border-white/10 bg-black/30 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-teal-200">Experiment Insights</h4>
+                <span className="text-xs text-gray-500">
+                  {insights.totalExperiments} runs
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="rounded-xl bg-gray-900/80 p-3">
+                  <div className="text-xs text-gray-500">Total Episodes</div>
+                  <strong className="text-lg text-teal-100">{insights.totalEpisodes}</strong>
+                </div>
+                <div className="rounded-xl bg-gray-900/80 p-3">
+                  <div className="text-xs text-gray-500">Best Avg Reward</div>
+                  <strong className="text-lg text-green-200">
+                    {insights.bestReward
+                      ? formatNumber(insights.bestReward.average_reward, 2)
+                      : "-"}
+                  </strong>
+                </div>
+                <div className="rounded-xl bg-gray-900/80 p-3">
+                  <div className="text-xs text-gray-500">Best Success</div>
+                  <strong className="text-lg text-blue-200">
+                    {insights.bestSuccess
+                      ? `${(insights.bestSuccess.success_rate * 100).toFixed(1)}%`
+                      : "-"}
+                  </strong>
+                </div>
+                <div className="rounded-xl bg-gray-900/80 p-3">
+                  <div className="text-xs text-gray-500">Lowest Collision</div>
+                  <strong className="text-lg text-yellow-100">
+                    {insights.safest
+                      ? `${(insights.safest.collision_rate * 100).toFixed(1)}%`
+                      : "-"}
+                  </strong>
+                </div>
+              </div>
+              {insights.bestReward && (
+                <div className="mt-3 rounded-xl border border-green-400/10 bg-green-400/5 p-3 text-xs text-gray-400">
+                  Current leader:{" "}
+                  <strong className="break-all text-green-200">{insights.bestReward.id}</strong>
+                </div>
+              )}
             </div>
 
             <div className="mt-2">
